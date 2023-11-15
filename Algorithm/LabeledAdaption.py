@@ -2,7 +2,7 @@ from LAMDA_SSL.Base.DeepModelMixin import DeepModelMixin
 from LAMDA_SSL.Base.InductiveEstimator import InductiveEstimator
 from sklearn.base import ClassifierMixin
 from LAMDA_SSL.utils import to_device
-from ..Config.Default_Config import config
+from Config.Default_Config import config
 from LAMDA_SSL.utils import Bn_Controller
 import copy
 import math
@@ -11,6 +11,7 @@ from LAMDA_SSL.Dataset.TrainDataset import TrainDataset
 import numpy as np
 import torch
 from torch.nn import CrossEntropyLoss
+
 
 class LabeledAdaption(DeepModelMixin, InductiveEstimator, ClassifierMixin):
     def __init__(self,
@@ -104,7 +105,7 @@ class LabeledAdaption(DeepModelMixin, InductiveEstimator, ClassifierMixin):
         self.num_classes = num_classes
         self.weight = weight
         self.warmup = warmup
-        self.soft=soft
+        self.soft = soft
         self.bn_controller = Bn_Controller()
         self.alpha = alpha
         self._estimator_type = ClassifierMixin._estimator_type
@@ -125,10 +126,10 @@ class LabeledAdaption(DeepModelMixin, InductiveEstimator, ClassifierMixin):
             if self.class_dataset_unlabeled[_] is not None:
                 self.class_dataset_unlabeled[_].add_transform(self.weak_augmentation, dim=1, x=0, y=0)
 
-    def fit(self, X=None, y=None, unlabeled_X=None, valid_X=None, valid_y=None, unlabeled_y=None,est=None):
+    def fit(self, X=None, y=None, unlabeled_X=None, valid_X=None, valid_y=None, unlabeled_y=None, est=None):
         self.unlabeled_X = unlabeled_X
         self.unlabeled_y = unlabeled_y
-        self.est=torch.Tensor(est).to(self.device)
+        self.est = torch.Tensor(est).to(self.device)
         self.init_train_dataset(X, y, unlabeled_X, unlabeled_y)
         self.init_train_dataloader()
         if self.network is not None:
@@ -148,10 +149,10 @@ class LabeledAdaption(DeepModelMixin, InductiveEstimator, ClassifierMixin):
         self.class_dataset_unlabeled = []
         self.class_labeled_X = []
         self.class_unlabeled_X = []
-        self.per_class_num=np.zeros(self.num_classes)
-        self.avg_per_class_confidence=np.zeros(self.num_classes)
-        self.avg_confidence=0
-        self.num=0
+        self.per_class_num = np.zeros(self.num_classes)
+        self.avg_per_class_confidence = np.zeros(self.num_classes)
+        self.avg_confidence = 0
+        self.num = 0
         for _ in range(self.num_classes):
             self.class_labeled_X.append([])
             self.class_unlabeled_X.append([])
@@ -176,7 +177,7 @@ class LabeledAdaption(DeepModelMixin, InductiveEstimator, ClassifierMixin):
         self.num_labeled_samples = np.array(self.num_labeled_samples)
         self.num_unlabeled_samples = np.array(self.num_unlabeled_samples)
         self.num_unlabeled_samples[self.num_unlabeled_samples == 0] = 1
-        self.weight_class = self.num_labeled_samples *len(unlabeled_X)/len(X)/ self.num_unlabeled_samples
+        self.weight_class = self.num_labeled_samples * len(unlabeled_X) / len(X) / self.num_unlabeled_samples
         self._train_dataset = copy.deepcopy(self.train_dataset)
         if isinstance(X, TrainDataset):
             self._train_dataset = X
@@ -210,53 +211,61 @@ class LabeledAdaption(DeepModelMixin, InductiveEstimator, ClassifierMixin):
         lb_y = lb_y[0] if isinstance(lb_y, (tuple, list)) else lb_y
         ulb_X = ulb_X[0] if isinstance(ulb_X, (tuple, list)) else ulb_X
         ulb_y = ulb_y[0] if isinstance(ulb_y, (tuple, list)) else ulb_y
-        est=self.est[ulb_idx]
+        est = self.est[ulb_idx]
 
         target_features, target_logits = self._network(lb_X)
         self.bn_controller.freeze_bn(self._network)
         source_features, source_logits = self._network(ulb_X)
         self.bn_controller.unfreeze_bn(self._network)
-        return target_logits, lb_y, source_logits, source_features, target_features, ulb_y,est
+        return target_logits, lb_y, source_logits, source_features, target_features, ulb_y, est
+
+    def CrossEntropyLoss(self, input, target):
+        return -torch.sum(target * torch.log(input + 0.001), dim=1)
 
     def get_loss(self, train_result, *args, **kwargs):
-        target_logits, lb_y, source_logits, source_features, target_features, ulb_y ,est= train_result
+        target_logits, lb_y, source_logits, source_features, target_features, ulb_y, est = train_result
         target_clf_loss = CrossEntropyLoss()(target_logits, lb_y)
 
         if self.T is not None:
             est = est / self.T
         if self.weight:
             if self.T is not None:
-                pseudo_label = torch.softmax((source_logits/self.T).detach() , dim=-1)
+                pseudo_label = torch.softmax((source_logits / self.T).detach(), dim=-1)
             else:
                 pseudo_label = torch.softmax((source_logits).detach(), dim=-1)
-            weight=np.zeros(ulb_y.shape[0])
-            _ulb_y=ulb_y.detach().cpu().numpy()
-            pseudo_label=pseudo_label.detach().cpu().numpy()
+            weight = np.zeros(ulb_y.shape[0])
+            _ulb_y = ulb_y.detach().cpu().numpy()
+            pseudo_label = pseudo_label.detach().cpu().numpy()
             for _ in range(_ulb_y.shape[0]):
                 weight[_] = pseudo_label[_][_ulb_y[_]]
-                self.avg_per_class_confidence[_ulb_y[_]] = (self.avg_per_class_confidence[_ulb_y[_]] * self.per_class_num[_ulb_y[_]]+weight[_])/(self.per_class_num[_ulb_y[_]]+1)
+                self.avg_per_class_confidence[_ulb_y[_]] = (self.avg_per_class_confidence[_ulb_y[_]] *
+                                                            self.per_class_num[_ulb_y[_]] + weight[_]) / (
+                                                                       self.per_class_num[_ulb_y[_]] + 1)
                 self.per_class_num[_ulb_y[_]] += 1
-                self.avg_confidence=(self.avg_confidence*self.num+weight[_])/(self.num+1)
-                self.num+=1
+                self.avg_confidence = (self.avg_confidence * self.num + weight[_]) / (self.num + 1)
+                self.num += 1
             for _ in range(_ulb_y.shape[0]):
-                weight[_] = weight[_]*self.avg_confidence/self.avg_per_class_confidence[_ulb_y[_]]
-            weight=torch.Tensor(weight).to(self.device)
+                weight[_] = weight[_] * self.avg_confidence / self.avg_per_class_confidence[_ulb_y[_]]
+            weight = torch.Tensor(weight).to(self.device)
             norm = torch.mean(weight)
-            weight=weight/norm
+            weight = weight / norm
             if self.soft:
-                source_loss = torch.mean(CrossEntropyLoss(reduction='none')(source_logits, (est).softmax(1).detach()) * weight.detach()*torch.Tensor(self.weight_class[ulb_y.cpu()]).to(self.device))
+                source_loss = torch.mean(self.CrossEntropyLoss(source_logits, (est).softmax(
+                    1).detach()) * weight.detach() * torch.Tensor(self.weight_class[ulb_y.cpu()]).to(self.device))
             else:
-                source_loss = torch.mean(CrossEntropyLoss(reduction='none')(source_logits, ulb_y.detach()) * weight.detach() * torch.Tensor(self.weight_class[ulb_y.cpu()]).to(self.device))
+                source_loss = torch.mean(
+                    self.CrossEntropyLoss(source_logits, ulb_y.detach()) * weight.detach() * torch.Tensor(
+                        self.weight_class[ulb_y.cpu()]).to(self.device))
         else:
             if self.soft:
-                source_loss = (CrossEntropyLoss(reduction='none')(source_logits, (est).softmax(1).detach())).mean()
+                source_loss = (self.CrossEntropyLoss(source_logits, (est).softmax(1).detach())).mean()
             else:
-                source_loss = (CrossEntropyLoss(reduction='none')(source_logits, ulb_y.detach())).mean()
+                source_loss = (self.CrossEntropyLoss(source_logits, ulb_y.detach())).mean()
         if self.warmup is not None:
             coef = 1. * math.exp(-5 * (1 - min(self.it_total / (self.warmup * self.num_it_total), 1)) ** 2)
         else:
-            coef= 1
-        loss = target_clf_loss + self.lambda_s*coef * source_loss
+            coef = 1
+        loss = target_clf_loss + self.lambda_s * coef * source_loss
         return loss
 
     @torch.no_grad()

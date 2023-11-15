@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import random
 from Dataset.Office31 import Office31
+from Dataset.OfficeHome import OfficeHome
 from Dataset.VisDA import VisDA
 from Dataset.ImageCLEF import ImageCLEF
 from LAMDA_SSL.Split.DataSplit import DataSplit
@@ -33,13 +34,14 @@ import os
 os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--dataset',type=str,default='Office-31')
+parser.add_argument('--dataset', type=str, default='Office-31')
+parser.add_argument('--transfer_loss', type=str, default='mmd')
 parser.add_argument('--root', type=str, default='/data/jialh/Office-31')
 parser.add_argument('--source', type=str, default='dslr')
 parser.add_argument('--target', type=str, default='amazon')
 parser.add_argument('--lt', type=bool, default=False)
 parser.add_argument('--op', type=bool, default=False)
-parser.add_argument('--batch_size', type=int, default=64)
+parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--iteration', type=int, default=2000)
 parser.add_argument('--device', type=str, default='cuda:0')
 parser.add_argument('--weight', type=bool, default=True)
@@ -52,7 +54,7 @@ parser.add_argument('--threshold', type=float, default=None)
 parser.add_argument('--labels', type=int, default=100)
 parser.add_argument('--unlabels', type=int, default=None)
 parser.add_argument('--load_from_path', type=bool, default=False)
-parser.add_argument('--lr',type=float,default=5e-4)
+parser.add_argument('--lr', type=float, default=5e-4)
 parser.add_argument('--verbose', type=bool, default=True)
 
 args = parser.parse_args()
@@ -60,61 +62,72 @@ root = args.root
 source = args.source
 target = args.target
 batch_size = args.batch_size
-iteration= args.iteration
-device=args.device
-soft=args.soft
-weight=args.weight
-load_from_path=args.load_from_path
-lambda_t=args.lambda_t
-lambda_s=args.lambda_s
-warmup=args.warmup
-T=args.T
-labels=args.labels
-unlabels=args.unlabels
-threshold=args.threshold
-transfer_loss=args.transfer_loss
-lr=args.lr
-dataset=args.dataset
-verbose=args.verbose
-lt=args.lt
-op=args.op
+iteration = args.iteration
+device = args.device
+soft = args.soft
+weight = args.weight
+load_from_path = args.load_from_path
+lambda_t = args.lambda_t
+lambda_s = args.lambda_s
+warmup = args.warmup
+T = args.T
+labels = args.labels
+unlabels = args.unlabels
+threshold = args.threshold
+transfer_loss = args.transfer_loss
+lr = args.lr
+dataset = args.dataset
+verbose = args.verbose
+lt = args.lt
+op = args.op
 
-if dataset=='Office-31':
+if dataset == 'Office-31':
     if op:
         source_dataset = Office31(root=root, domain=source,
-            classnames=['back_pack', 'bike', 'bike_helmet', 'bookcase', 'bottle',
-            'calculator', 'desk_chair', 'desk_lamp', 'desktop_computer',
-            'file_cabinet', 'headphones', 'keyboard', 'laptop_computer',
-            'letter_tray', 'mobile_phone'])
+                                  classnames=['back_pack', 'bike', 'bike_helmet', 'bookcase', 'bottle',
+                                              'calculator', 'desk_chair', 'desk_lamp', 'desktop_computer',
+                                              'file_cabinet', 'headphones', 'keyboard', 'laptop_computer',
+                                              'letter_tray', 'mobile_phone'])
         num_classes = 15
     else:
-        source_dataset=Office31(root=root,domain=source)
+        source_dataset = Office31(root=root, domain=source)
         num_classes = 31
-    target_dataset=Office31(root=root,domain=target)
-
-elif dataset=='image-CLEF':
+    target_dataset = Office31(root=root, domain=target)
+if dataset == 'OfficeHome':
     if op:
-        source_dataset = ImageCLEF(root=root, domain=source,classnames=['0', '1', '2',
-                                                                     '3', '4', '5'])
+        source_dataset = Office31(root=root, domain=source,
+                                  classnames=['back_pack', 'bike', 'bike_helmet', 'bookcase', 'bottle',
+                                              'calculator', 'desk_chair', 'desk_lamp', 'desktop_computer',
+                                              'file_cabinet', 'headphones', 'keyboard', 'laptop_computer',
+                                              'letter_tray', 'mobile_phone'])
+        num_classes = 15
+    else:
+        source_dataset = OfficeHome(root=root, domain=source)
+        num_classes = 65
+    target_dataset = OfficeHome(root=root, domain=target)
+elif dataset == 'image-CLEF':
+    if op:
+        source_dataset = ImageCLEF(root=root, domain=source, classnames=['0', '1', '2',
+                                                                         '3', '4', '5'])
         num_classes = 6
     else:
-        source_dataset=ImageCLEF(root=root,domain=source)
+        source_dataset = ImageCLEF(root=root, domain=source)
         num_classes = 12
-    target_dataset=ImageCLEF(root=root,domain=target)
+    target_dataset = ImageCLEF(root=root, domain=target)
 
 else:
     if op:
-        source_dataset = VisDA(root=root, domain=source,classnames=['aeroplane',
-                                                                    'bicycle',
-                                                                    'bus',
-                                                                    'car',
-                                                                    'horse',
-                                                                    'knife'])
+        source_dataset = VisDA(root=root, domain=source, classnames=['aeroplane',
+                                                                     'bicycle',
+                                                                     'bus',
+                                                                     'car',
+                                                                     'horse',
+                                                                     'knife'])
         num_classes = 6
     else:
-        source_dataset=VisDA(root=root,domain=source)
+        source_dataset = VisDA(root=root, domain=source)
         num_classes = 12
-    target_dataset = VisDA(root=root,domain=target)
+    target_dataset = VisDA(root=root, domain=target)
 
 
 def set_seed(seed):
@@ -129,67 +142,78 @@ def set_seed(seed):
     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
     os.environ['PYTHONHASHSEED'] = str(seed)
 
+
 def get_mena_std(imgs):
     tmp_imgs = []
     for _ in range(len(imgs)):
-        tmp_imgs.append(np.array(imgs[_]).transpose(2,0,1).reshape(3,-1))
-    tmp_imgs=np.hstack(tmp_imgs)
+        tmp_imgs.append(np.array(imgs[_]).transpose(2, 0, 1).reshape(3, -1))
+    tmp_imgs = np.hstack(tmp_imgs)
     mean = np.mean(tmp_imgs / 255, axis=1)
     std = np.std(tmp_imgs / 255, axis=1)
-    return mean,std
+    return mean, std
 
 
-
-performance_list=[]
-file_f = open('./Result/BDA_'+source+'_'+target+'_'+str(labels)+'_op_'+str(op)+'_lt_'+str(lt)+'_final.txt' ,"w")
-for _ in range(0,5):
+performance_list = []
+file_f = open(
+    './Result/BDA_' + source + '_' + target + '_' + str(labels) + '_op_' + str(op) + '_lt_' + str(lt) + '_final.txt',
+    "w")
+for _ in range(0, 5):
     seed = _
+
+
     def worker_init(worked_id):
         worker_seed = seed
         np.random.seed(worker_seed)
         random.seed(worker_seed)
 
+
     S_X, S_y = source_dataset.imgs, source_dataset.data_labels
     T_X, T_y = target_dataset.imgs, target_dataset.data_labels
 
-
     set_seed(seed)
-    S_y=np.array(S_y)
-    T_y=np.array(T_y)
+    S_y = np.array(S_y)
+    T_y = np.array(T_y)
     if lt:
-        img_max=len(T_X)/num_classes
-        class_st=class_status(T_y)
-        num_per_cls=class_st.class_counts
-        imb_factor=0.1
+        img_max = len(T_X) / num_classes
+        class_st = class_status(T_y)
+        num_per_cls = class_st.class_counts
+        imb_factor = 0.1
         for cls_idx in range(num_classes):
-            num = img_max * (imb_factor**(cls_idx / (num_classes - 1.0)))
-            num_per_cls[cls_idx]=min(int(num),num_per_cls[cls_idx])
-        y_indices=class_st.y_indices
+            num = img_max * (imb_factor ** (cls_idx / (num_classes - 1.0)))
+            num_per_cls[cls_idx] = min(int(num), num_per_cls[cls_idx])
+        y_indices = class_st.y_indices
 
-        index_list=[]
+        index_list = []
         for _ in range(num_classes):
-            y_ind=np.argwhere(y_indices==_).flatten().tolist()
-            y_ind=random.sample(y_ind,num_per_cls[_])
-            index_list=index_list+y_ind
-        _T_X=copy.copy(T_X)
-        T_X=[_T_X[_] for _ in index_list]
-        T_y=T_y[index_list]
-        unlabels=None
+            y_ind = np.argwhere(y_indices == _).flatten().tolist()
+            y_ind = random.sample(y_ind, num_per_cls[_])
+            index_list = index_list + y_ind
+        _T_X = copy.copy(T_X)
+        T_X = [_T_X[_] for _ in index_list]
+        T_y = T_y[index_list]
+    unlabels = int(0.9 * len(T_X))
+    labels = int(0.9 * len(S_X))
 
     labeled_X, labeled_y, test_X, test_y = DataSplit(stratified=True, shuffle=True, X=S_X, y=S_y, size_split=labels,
                                                      random_state=seed)
+
     if unlabels is not None:
-        unlabeled_X, unlabeled_y,_,_ = DataSplit(stratified=True, shuffle=True, X=T_X, y=T_y, size_split=unlabels,
-                                                     random_state=seed)
+        unlabeled_X, unlabeled_y, test_X_u, test_y_u = DataSplit(stratified=True, shuffle=True, X=T_X, y=T_y,
+                                                                 size_split=unlabels,
+                                                                 random_state=seed)
     else:
         unlabeled_X, unlabeled_y = T_X, T_y
-
-    mean,std=get_mena_std(labeled_X)
-
+    mean, std = get_mena_std(labeled_X)
+    # print(test_X.shape)
+    test_X.extend(test_X_u)
+    test_y = np.concatenate((test_y, test_y_u), axis=0)
+    print(len(test_X))
+    print(len(test_y))
     train_pre_transform = transforms.Compose([transforms.Resize([256, 256]), transforms.RandomCrop(224)])
     valid_pre_transform = transforms.Compose([transforms.Resize([256, 256]), transforms.CenterCrop(224)])
     test_pre_transform = transforms.Compose([transforms.Resize([256, 256]), transforms.CenterCrop(224)])
-    transform = Pipeline([('ToTensor', ToTensor(dtype='float', image=True)), ('Normalization', Normalization(mean=mean, std=std))])
+    transform = Pipeline(
+        [('ToTensor', ToTensor(dtype='float', image=True)), ('Normalization', Normalization(mean=mean, std=std))])
 
     weak_augmentation = RandomHorizontalFlip()
 
@@ -206,26 +230,35 @@ for _ in range(0,5):
     valid_sampler = SequentialSampler()
     test_sampler = SequentialSampler()
 
-    labeled_dataloader = LabeledDataLoader(batch_size=batch_size, num_workers=0, drop_last=True,worker_init_fn=worker_init)
-    unlabeled_dataloader = UnlabeledDataLoader(num_workers=0, drop_last=True,worker_init_fn=worker_init)
-    valid_dataloader = UnlabeledDataLoader(batch_size=batch_size, num_workers=0, drop_last=False,worker_init_fn=worker_init)
-    test_dataloader = UnlabeledDataLoader(batch_size=batch_size, num_workers=0, drop_last=False,worker_init_fn=worker_init)
+    labeled_dataloader = LabeledDataLoader(batch_size=batch_size, num_workers=0, drop_last=True,
+                                           worker_init_fn=worker_init)
+    unlabeled_dataloader = UnlabeledDataLoader(num_workers=0, drop_last=True, worker_init_fn=worker_init)
+    valid_dataloader = UnlabeledDataLoader(batch_size=batch_size, num_workers=0, drop_last=False,
+                                           worker_init_fn=worker_init)
+    test_dataloader = UnlabeledDataLoader(batch_size=batch_size, num_workers=0, drop_last=False,
+                                          worker_init_fn=worker_init)
 
-    network_unlabeled=TransferNet(num_class=num_classes,transfer_loss=transfer_loss)
-    network_labeled = ResNet50Fc(num_classes=num_classes,output_feature=True)
+    network_unlabeled = TransferNet(num_class=num_classes, transfer_loss=transfer_loss)
+    network_labeled = ResNet50Fc(num_classes=num_classes, output_feature=True)
     network_meta = ResNet50Fc(num_classes=num_classes, output_feature=True)
 
-    optimizer_unlabeled=SGD(lr=lr,momentum=0.9)
-    optimizer_labeled=SGD(lr=lr,momentum=0.9)
+    optimizer_unlabeled = SGD(lr=lr, momentum=0.9)
+    optimizer_labeled = SGD(lr=lr, momentum=0.9)
 
-    scheduler_unlabeled=DAScheduler()
-    scheduler_labeled=CosineWarmup(num_cycles=7./16,num_training_steps=iteration)
+    scheduler_unlabeled = DAScheduler()
+    scheduler_labeled = CosineWarmup(num_cycles=7. / 16, num_training_steps=iteration)
 
-    file_u = open('./Result/BDA_' + dataset+'_'+ source +'_'+target+ '_' + str(seed) +'_'+str(labels)+'_op_'+str(op)+'_'+str(iteration)+'_'+str(weight)+'_lt_'+str(lt)+'_unlabeledadaption'+str(verbose)+'.txt', "w")
-    file_l = open('./Result/BDA_'+str(soft)+'_'+ dataset+'_'+ source +'_'+target+ '_' + str(seed) +'_'+str(labels)+'_op_'+str(op)+'_'+str(iteration)+'_'+str(weight)+'_lt_'+str(lt)+'_labeledadaption'+str(verbose)+str(T)+'.txt', "w")
-    UDA= UnlabeledAdaption(
-        lambda_t=lambda_t,mu=1,
-        weight_decay=5e-4,epoch=1,
+    file_u = open(
+        './Result/BDA_' + dataset + '_' + source + '_' + target + '_' + str(seed) + '_' + str(labels) + '_op_' + str(
+            op) + '_' + str(iteration) + '_' + str(weight) + '_lt_' + str(lt) + '_unlabeledadaption' + str(
+            verbose) + '.txt', "w")
+    file_l = open(
+        './Result/BDA_' + str(soft) + '_' + dataset + '_' + source + '_' + target + '_' + str(seed) + '_' + str(
+            labels) + '_op_' + str(op) + '_' + str(iteration) + '_' + str(weight) + '_lt_' + str(
+            lt) + '_labeledadaption' + str(verbose) + str(T) + '.txt', "w")
+    UDA = UnlabeledAdaption(
+        lambda_t=lambda_t, mu=1,
+        weight_decay=5e-4, epoch=1,
         num_it_epoch=2000, num_it_total=iteration,
         device=device, num_classes=num_classes,
         eval_it=None,
@@ -249,14 +282,14 @@ for _ in range(0,5):
         verbose=verbose
     )
 
-    LDA= LabeledAdaption(
+    LDA = LabeledAdaption(
         lambda_s=lambda_s,
-        mu=1, weight_decay=5e-4,weight=weight,warmup=warmup,
-        T=T,num_classes=num_classes,
+        mu=1, weight_decay=5e-4, weight=weight, warmup=warmup,
+        T=T, num_classes=num_classes,
         threshold=threshold,
-        eval_it=None,epoch=1,
+        eval_it=None, epoch=1,
         num_it_epoch=iteration, num_it_total=iteration,
-        device=device,soft=soft,
+        device=device, soft=soft,
         labeled_dataset=copy.deepcopy(labeled_dataset),
         unlabeled_dataset=copy.deepcopy(unlabeled_dataset),
         valid_dataset=copy.deepcopy(valid_dataset),
@@ -277,16 +310,20 @@ for _ in range(0,5):
         verbose=verbose
     )
 
-    model = BDA(UnlabeledDomainAdaption=UDA,LabeledDomainAdaption=LDA,
-                      pred_path='./Pseudo_Label/'+source +'_'+target+'_'+str(seed)+'_'+str(labels)+'_op_'+str(op)+'_'+str(iteration)+'_'+transfer_loss+'_'+str(lambda_t)+'_lt_'+str(lt)+'_pred.npy',
-                      score_path='./Pseudo_Label/'+source +'_'+target+'_'+str(seed)+'_'+str(labels)+'_op_'+str(op)+'_'+str(iteration)+'_'+transfer_loss+'_'+str(lambda_t)+'_lt_'+str(lt)+'_score.npy',
-                      T=T,threshold=threshold,load_from_path=load_from_path)
+    model = BDA(UnlabeledDomainAdaption=UDA, LabeledDomainAdaption=LDA,
+                pred_path='./Pseudo_Label/' + source + '_' + target + '_' + str(seed) + '_' + str(
+                    labels) + '_op_' + str(op) + '_' + str(iteration) + '_' + transfer_loss + '_' + str(
+                    lambda_t) + '_lt_' + str(lt) + '_pred.npy',
+                score_path='./Pseudo_Label/' + source + '_' + target + '_' + str(seed) + '_' + str(
+                    labels) + '_op_' + str(op) + '_' + str(iteration) + '_' + transfer_loss + '_' + str(
+                    lambda_t) + '_lt_' + str(lt) + '_score.npy',
+                T=T, threshold=threshold, load_from_path=load_from_path)
 
-    model.fit(X=labeled_X, y=labeled_y,unlabeled_X=unlabeled_X,unlabeled_y=unlabeled_y)
+    model.fit(X=labeled_X, y=labeled_y, unlabeled_X=unlabeled_X, unlabeled_y=unlabeled_y)
 
-    pred=model.predict(test_X)
+    pred = model.predict(test_X)
 
-    performance=accuracy_score(test_y,pred)
+    performance = accuracy_score(test_y, pred)
 
     performance_list.append(performance)
 
@@ -296,6 +333,6 @@ performance_list = np.array(performance_list)
 mean = performance_list.mean()
 std = performance_list.std()
 
-print(performance_list,file=file_f)
-print(mean,file=file_f)
-print(std,file=file_f)
+print(performance_list, file=file_f)
+print(mean, file=file_f)
+print(std, file=file_f)

@@ -1,7 +1,8 @@
+from Config.Default_Config import config
 from LAMDA_SSL.Base.DeepModelMixin import DeepModelMixin
 from LAMDA_SSL.Base.InductiveEstimator import InductiveEstimator
 from sklearn.base import ClassifierMixin
-from ..Config.Default_Config import config
+
 from LAMDA_SSL.utils import Bn_Controller
 import torch
 from LAMDA_SSL.utils import to_device
